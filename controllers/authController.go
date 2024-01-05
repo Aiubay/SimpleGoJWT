@@ -16,7 +16,9 @@ import (
 const SecretKey = "secret"
 
 func Register(c *fiber.Ctx) error {
-	var data map[string]string
+	// var data map[string]string
+
+	var data models.User
 
 	err := c.BodyParser(&data)
 
@@ -24,10 +26,10 @@ func Register(c *fiber.Ctx) error {
 		return err
 	}
 
-	password, _ := bcrypt.GenerateFromPassword([]byte(data["password"]), 14)
+	password, _ := bcrypt.GenerateFromPassword([]byte(data.Passwords), 14)
 	user := models.User{
-		Name:      data["name"],
-		Email:     data["email"],
+		Name:      data.Name,
+		Email:     data.Email,
 		Passwords: password,
 	}
 
@@ -37,7 +39,8 @@ func Register(c *fiber.Ctx) error {
 }
 
 func Login(c *fiber.Ctx) error {
-	var data map[string]string
+	// var data map[string]string
+	var data models.User
 
 	if err := c.BodyParser(&data); err != nil {
 		return err
@@ -45,7 +48,7 @@ func Login(c *fiber.Ctx) error {
 
 	var user models.User
 
-	database.DB.Where("email = ?", data["email"]).First(&user)
+	database.DB.Where("email = ?", data.Email).First(&user)
 
 	if user.Id == 0 {
 		c.Status(fiber.StatusNotFound)
@@ -54,7 +57,7 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := bcrypt.CompareHashAndPassword(user.Passwords, []byte(data["password"])); err != nil {
+	if err := bcrypt.CompareHashAndPassword(user.Passwords, []byte(data.Passwords)); err != nil {
 		c.Status(fiber.StatusBadRequest)
 		return c.JSON(fiber.Map{
 			"message": "Invalid password",
