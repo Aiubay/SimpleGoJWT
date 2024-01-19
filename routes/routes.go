@@ -14,8 +14,20 @@ func Setup(app *fiber.App) {
 
 	app.Get("/api/user", controllers.User)
 
+	app.Get("/api/users", controllers.Users)
+
 	app.Get("/api/upload", controllers.Upload)
 
 	app.Post("/api/logout", controllers.Logout)
+
+	app.Get("/api/getAllRole", controllers.GetAllRole)
+
+	app.Get("/testing", controllers.Testing)
+
+	app.Get("/api/insertRole", controllers.InsertRole)
+
+	app.Get("/api/InsertUsers", controllers.InsertUsers)
+
+	app.Get("/api/getUserById", controllers.GetUserByID)
 
 }

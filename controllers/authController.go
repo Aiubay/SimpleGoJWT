@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt"
 	"github.com/xuri/excelize/v2"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -16,56 +16,104 @@ import (
 const SecretKey = "secret"
 
 func Register(c *fiber.Ctx) error {
-	// var data map[string]string
 
-	var data models.User
-
+	var data models.PayloadRegister
+	var role models.Role
 	err := c.BodyParser(&data)
 
 	if err != nil {
 		return err
 	}
 
-	password, _ := bcrypt.GenerateFromPassword([]byte(data.Passwords), 14)
-	user := models.User{
-		Name:      data.Name,
-		Email:     data.Email,
-		Passwords: password,
+	tx := database.DB.Begin()
+
+	resultRoles := database.DB.Where("id = ?", 2).First(&role)
+
+	if resultRoles.Error != nil {
+		c.Status(fiber.StatusBadRequest)
+		return c.JSON(fiber.Map{
+			"message": "Fetch roles err",
+			"err":     resultRoles.Error,
+		})
 	}
 
-	database.DB.Create(&user)
+	password, _ := bcrypt.GenerateFromPassword([]byte(data.Password), bcrypt.DefaultCost)
 
+	user := models.User{
+		Name:     data.Name,
+		Email:    data.Email,
+		Password: password,
+	}
+
+	result := tx.Create(&user)
+
+	if result.Error != nil {
+		tx.Rollback()
+		c.Status(fiber.StatusBadRequest)
+		return c.JSON(fiber.Map{
+			"message": result.Error,
+		})
+	}
+	tx.Commit()
+
+	assignRole := AssignRole(int(user.ID), "guest")
+
+	if !assignRole {
+		tx.Rollback()
+		c.Status(fiber.StatusBadRequest)
+		return c.JSON(fiber.Map{
+			"message": "Failed to assign role",
+		})
+	}
+	tx.Commit()
 	return c.JSON(user)
 }
 
 func Login(c *fiber.Ctx) error {
-	// var data map[string]string
-	var data models.User
 
-	if err := c.BodyParser(&data); err != nil {
+	data := new(models.PayloadLogin)
+
+	if err := c.BodyParser(data); err != nil {
 		return err
 	}
 
 	var user models.User
-
 	database.DB.Where("email = ?", data.Email).First(&user)
 
-	if user.Id == 0 {
+	if user.ID == 0 {
 		c.Status(fiber.StatusNotFound)
 		return c.JSON(fiber.Map{
 			"message": "User not found",
 		})
 	}
 
-	if err := bcrypt.CompareHashAndPassword(user.Passwords, []byte(data.Passwords)); err != nil {
+	errCompare := bcrypt.CompareHashAndPassword(user.Password, []byte(data.Password))
+	if errCompare != nil {
 		c.Status(fiber.StatusBadRequest)
 		return c.JSON(fiber.Map{
-			"message": "Invalid password",
+			"message": "incorrect password",
+			"error":   errCompare,
 		})
 	}
+	// checkCookie := c.Cookies("jwt")
+
+	// if checkCookie != "" {
+	// 	claims, status := extractClaims(checkCookie)
+	// 	if status {
+	// 		x := claims.ExpiresAt
+
+	// 		if x < time.Now().Unix() {
+	// 			return c.JSON(fiber.Map{
+	// 				"status": "Cookies Checked",
+	// 			})
+	// 		}
+
+	// 	}
+
+	// }
 
 	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{
-		Issuer:    strconv.Itoa(int(user.Id)),
+		Issuer:    strconv.Itoa(int(user.ID)),
 		ExpiresAt: time.Now().Add(time.Minute * 1).Unix(), // 24 hours
 	})
 
@@ -93,6 +141,32 @@ func Login(c *fiber.Ctx) error {
 
 }
 
+// func extractClaims(tokenStr string) (*jwt.StandardClaims, bool) {
+// 	hmacSecretString := SecretKey
+// 	hmacSecret := []byte(hmacSecretString)
+
+// 	token, err := jwt.ParseWithClaims(tokenStr, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
+// 		// Check the signing method
+// 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+// 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+// 		}
+// 		// Return the secret key
+// 		return hmacSecret, nil
+// 	})
+
+// 	if err != nil {
+// 		return nil, false
+// 	}
+
+// 	// Extract the claims
+// 	claims, ok := token.Claims.(*jwt.StandardClaims)
+// 	if !ok {
+// 		return nil, false
+// 	}
+
+// 	return claims, true
+// }
+
 func User(c *fiber.Ctx) error {
 	cookie := c.Cookies("jwt")
 
@@ -109,6 +183,11 @@ func User(c *fiber.Ctx) error {
 
 	claims := token.Claims.(*jwt.StandardClaims)
 
+	if claims.ExpiresAt < time.Now().Unix() {
+		return c.JSON(fiber.Map{
+			"message": "Claims expired",
+		})
+	}
 	var user models.User
 
 	database.DB.Where("id = ?", claims.Issuer).First(&user)
@@ -164,4 +243,24 @@ func Upload(c *fiber.Ctx) error {
 		"totalTime": (timeEnd - timeStart) / 60,
 	})
 
+}
+
+func Testing(c *fiber.Ctx) error {
+	// passwordRequest := "Testx"
+	passwordDB := "Testx"
+
+	bsp, err := bcrypt.GenerateFromPassword([]byte(passwordDB), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(bsp)
+	new := []byte("$2a$10$Fr/MwLaF.VDPKbFyOPIMmukKi9mog9BhmHr07ASXVLJxKZTfQLCoS")
+	err = bcrypt.CompareHashAndPassword(new, []byte("LongAssPasswordss"))
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("password are equal")
+	}
+
+	return nil
 }

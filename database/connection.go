@@ -23,5 +23,8 @@ func Connect() {
 	DB = connection
 
 	connection.AutoMigrate(&models.User{})
-	// connection.AutoMigrate(&models.Excel{})
+	connection.AutoMigrate(&models.Role{})
+	// connection.AutoMigrate(&models.Service{})
+	connection.AutoMigrate(&models.UserHasRoles{})
+
 }
