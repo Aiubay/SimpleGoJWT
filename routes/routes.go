@@ -2,32 +2,30 @@ package routes
 
 import (
 	"jwtreact/controllers"
+	"jwtreact/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 func Setup(app *fiber.App) {
+	api := app.Group("/api", middleware.JwtMiddleware)
 
-	app.Post("/api/register", controllers.Register)
+	app.Post("/register", controllers.Register)
+	app.Post("/login", controllers.Login)
 
-	app.Post("/api/login", controllers.Login)
+	api.Post("/logout", controllers.Logout)
 
-	app.Get("/api/user", controllers.User)
+	api.Get("/user", controllers.GetUser)
+	api.Get("/users", controllers.GetUsers)
+	api.Get("/userById/:id", controllers.GetUserByID)
 
-	app.Get("/api/users", controllers.Users)
+	api.Get("/getAllRole", controllers.GetAllRole)
+	api.Get("/insertRole", controllers.InsertRole)
+	api.Get("/deleteUsers", controllers.DeleteAllUsers)
+	api.Get("/getUserById", controllers.GetUserByID)
+	api.Get("/createUsers", controllers.CreateUsers)
 
-	app.Get("/api/upload", controllers.Upload)
-
-	app.Post("/api/logout", controllers.Logout)
-
-	app.Get("/api/getAllRole", controllers.GetAllRole)
+	api.Get("/upload", controllers.Upload)
 
 	app.Get("/testing", controllers.Testing)
-
-	app.Get("/api/insertRole", controllers.InsertRole)
-
-	app.Get("/api/InsertUsers", controllers.InsertUsers)
-
-	app.Get("/api/getUserById", controllers.GetUserByID)
-
 }

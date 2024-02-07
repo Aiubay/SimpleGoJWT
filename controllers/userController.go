@@ -8,15 +8,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func Users(c *fiber.Ctx) error {
-	var user []models.User
+// GetUsers retrieves a list of users from the database and returns it as JSON.
+//
+// Parameter(s): c *fiber.Ctx
+// Return type(s): error
+func GetUsers(c *fiber.Ctx) error {
+	var users []models.User
 
-	result := database.DB.Preload(clause.Associations).Find(&user)
+	result := database.DB.Preload(clause.Associations).Find(&users)
 
 	if result.Error != nil {
-		c.Status(fiber.StatusInternalServerError)
-		return c.JSON(fiber.Map{
-			"message": result.Error,
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": result.Error.Error(),
 		})
 	}
 
@@ -29,18 +32,29 @@ func Users(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status": "OK",
 		"code":   fiber.StatusOK,
-		"data":   user,
+		"data":   users,
 	})
 }
-
 func GetUserByID(c *fiber.Ctx) error {
-
+	id := c.Params("id") // assumes that id is passed as a parameter in the URL
 	var user models.User
-	var hasRoles models.UserHasRoles
-	database.DB.Model(&user).Association(clause.Associations).Find(&hasRoles)
+
+	result := database.DB.Preload(clause.Associations).First(&user, id)
+
+	if result.Error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": result.Error.Error(),
+		})
+	}
+
+	if result.RowsAffected == 0 {
+		return c.JSON(fiber.Map{
+			"message": "User not found",
+		})
+	}
 
 	return c.JSON(fiber.Map{
-		"data":  user,
-		"data2": hasRoles,
+		"status": "OK",
+		"data":   user,
 	})
 }

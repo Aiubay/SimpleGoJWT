@@ -1,11 +1,15 @@
 package controllers
 
 import (
+	"errors"
 	"fmt"
 	"jwtreact/database"
 	"jwtreact/models"
+	"os"
 	"strconv"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt"
@@ -13,170 +17,116 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const SecretKey = "secret"
-
 func Register(c *fiber.Ctx) error {
-
-	var data models.PayloadRegister
+	var payload models.PayloadRegister
 	var role models.Role
-	err := c.BodyParser(&data)
 
-	if err != nil {
+	if err := c.BodyParser(&payload); err != nil {
 		return err
 	}
 
 	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
 
-	resultRoles := database.DB.Where("id = ?", 2).First(&role)
-
-	if resultRoles.Error != nil {
+	if err := database.DB.Where("id = ?", 2).First(&role).Error; err != nil {
 		c.Status(fiber.StatusBadRequest)
 		return c.JSON(fiber.Map{
-			"message": "Fetch roles err",
-			"err":     resultRoles.Error,
+			"message": "Fetch roles error",
+			"err":     err,
 		})
 	}
 
-	password, _ := bcrypt.GenerateFromPassword([]byte(data.Password), bcrypt.DefaultCost)
+	password, _ := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
 
 	user := models.User{
-		Name:     data.Name,
-		Email:    data.Email,
+		Name:     payload.Name,
+		Email:    payload.Email,
 		Password: password,
 	}
 
-	result := tx.Create(&user)
-
-	if result.Error != nil {
+	if result := tx.Create(&user); result.Error != nil {
 		tx.Rollback()
 		c.Status(fiber.StatusBadRequest)
 		return c.JSON(fiber.Map{
 			"message": result.Error,
 		})
 	}
+
 	tx.Commit()
 
-	assignRole := AssignRole(int(user.ID), "guest")
-
-	if !assignRole {
+	if !AssignRole(int(user.ID), "guest") {
 		tx.Rollback()
 		c.Status(fiber.StatusBadRequest)
 		return c.JSON(fiber.Map{
 			"message": "Failed to assign role",
 		})
 	}
-	tx.Commit()
+
 	return c.JSON(user)
 }
 
 func Login(c *fiber.Ctx) error {
-
-	data := new(models.PayloadLogin)
-
-	if err := c.BodyParser(data); err != nil {
+	input := new(models.PayloadLogin)
+	if err := c.BodyParser(input); err != nil {
 		return err
 	}
 
 	var user models.User
-	database.DB.Where("email = ?", data.Email).First(&user)
-
-	if user.ID == 0 {
-		c.Status(fiber.StatusNotFound)
-		return c.JSON(fiber.Map{
-			"message": "User not found",
-		})
+	if err := database.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "User not found",
+			})
+		}
+		return err
 	}
 
-	errCompare := bcrypt.CompareHashAndPassword(user.Password, []byte(data.Password))
-	if errCompare != nil {
-		c.Status(fiber.StatusBadRequest)
-		return c.JSON(fiber.Map{
-			"message": "incorrect password",
+	if errCompare := bcrypt.CompareHashAndPassword(user.Password, []byte(input.Password)); errCompare != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Incorrect password",
 			"error":   errCompare,
 		})
 	}
-	// checkCookie := c.Cookies("jwt")
-
-	// if checkCookie != "" {
-	// 	claims, status := extractClaims(checkCookie)
-	// 	if status {
-	// 		x := claims.ExpiresAt
-
-	// 		if x < time.Now().Unix() {
-	// 			return c.JSON(fiber.Map{
-	// 				"status": "Cookies Checked",
-	// 			})
-	// 		}
-
-	// 	}
-
-	// }
 
 	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{
 		Issuer:    strconv.Itoa(int(user.ID)),
-		ExpiresAt: time.Now().Add(time.Minute * 1).Unix(), // 24 hours
+		ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
 	})
 
-	token, err := claims.SignedString([]byte(SecretKey))
-
+	token, err := claims.SignedString([]byte(os.Getenv("JWT_SECRET_KEY")))
 	if err != nil {
-		c.Status(fiber.StatusInternalServerError)
-		return c.JSON(fiber.Map{
-			"message": "Cannot Login",
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Cannot login",
 		})
 	}
 
 	cookie := fiber.Cookie{
 		Name:     "jwt",
 		Value:    token,
-		Expires:  time.Now().Add(time.Minute * 1),
+		Expires:  time.Now().Add(24 * time.Hour),
 		HTTPOnly: true,
 	}
-
 	c.Cookie(&cookie)
 
 	return c.JSON(fiber.Map{
-		"message": cookie,
+		"message": "Login successful",
+		"claims":  claims,
 	})
-
 }
 
-// func extractClaims(tokenStr string) (*jwt.StandardClaims, bool) {
-// 	hmacSecretString := SecretKey
-// 	hmacSecret := []byte(hmacSecretString)
+func GetUser(c *fiber.Ctx) error {
+	jwtCookie := c.Cookies("jwt")
 
-// 	token, err := jwt.ParseWithClaims(tokenStr, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
-// 		// Check the signing method
-// 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-// 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-// 		}
-// 		// Return the secret key
-// 		return hmacSecret, nil
-// 	})
-
-// 	if err != nil {
-// 		return nil, false
-// 	}
-
-// 	// Extract the claims
-// 	claims, ok := token.Claims.(*jwt.StandardClaims)
-// 	if !ok {
-// 		return nil, false
-// 	}
-
-// 	return claims, true
-// }
-
-func User(c *fiber.Ctx) error {
-	cookie := c.Cookies("jwt")
-
-	token, err := jwt.ParseWithClaims(cookie, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(SecretKey), nil
+	token, err := jwt.ParseWithClaims(jwtCookie, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET_KEY")), nil
 	})
 
 	if err != nil {
-		c.Status(fiber.StatusUnauthorized)
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"message": "unauthorized",
 		})
 	}
@@ -189,11 +139,9 @@ func User(c *fiber.Ctx) error {
 		})
 	}
 	var user models.User
-
-	database.DB.Where("id = ?", claims.Issuer).First(&user)
+	database.DB.Where("id = ?", claims.Issuer).Preload("Role").First(&user)
 
 	return c.JSON(user)
-
 }
 
 func Logout(c *fiber.Ctx) error {
@@ -225,24 +173,26 @@ func Upload(c *fiber.Ctx) error {
 		return err
 	}
 
-	timeStart := time.Now().Unix()
-	for i, row := range rows {
-		for _, colCell := range row {
-			exportsModel := models.Excel{
-				Random: colCell,
-			}
-			database.DB.Create(&exportsModel)
-		}
+	exportsModels := make([]models.Excel, 0, len(rows)*len(rows[0]))
 
-		fmt.Println(i + 1)
+	for _, row := range rows {
+		for _, colCell := range row {
+			exportsModels = append(exportsModels, models.Excel{
+				Random: colCell,
+			})
+		}
 	}
-	timeEnd := time.Now().Unix()
+
+	if err := database.DB.Create(&exportsModels).Error; err != nil {
+		return err
+	}
+
+	timeStart := time.Now()
 
 	return c.JSON(fiber.Map{
 		"message":   "success",
-		"totalTime": (timeEnd - timeStart) / 60,
+		"totalTime": time.Since(timeStart).Seconds(),
 	})
-
 }
 
 func Testing(c *fiber.Ctx) error {

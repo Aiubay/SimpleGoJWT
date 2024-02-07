@@ -4,7 +4,9 @@ import (
 	"jwtreact/database"
 	"jwtreact/models"
 
+	"github.com/bxcodec/faker/v4"
 	"github.com/gofiber/fiber/v2"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func InsertRole(c *fiber.Ctx) error {
@@ -27,9 +29,34 @@ func InsertRole(c *fiber.Ctx) error {
 	})
 }
 
-func InsertUsers(c *fiber.Ctx) error {
-	var users []models.User
-	database.DB.Delete(&users)
+func DeleteAllUsers(c *fiber.Ctx) error {
+	// var users []models.User
+
+	database.DB.Exec("Truncate TABLE users")
+
+	return c.JSON(fiber.Map{
+		"Messages": "Success",
+	})
+}
+
+func CreateUsers(c *fiber.Ctx) error {
+
+	for i := 0; i < 10; i++ {
+
+		password, _ := bcrypt.GenerateFromPassword([]byte("testing"), bcrypt.DefaultCost)
+
+		user := models.User{
+			Name:     faker.Name(),
+			Email:    faker.Email(),
+			Password: password,
+		}
+
+		database.DB.Create(&user)
+
+		AssignRole(int(user.ID), "guest")
+
+	}
+
 	return c.JSON(fiber.Map{
 		"Messages": "Success",
 	})

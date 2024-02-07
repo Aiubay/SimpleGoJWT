@@ -37,7 +37,6 @@ func GetAllRole(c *fiber.Ctx) error {
 	})
 }
 
-
 func AssignRole(userId int, role string) bool {
 
 	var user models.User

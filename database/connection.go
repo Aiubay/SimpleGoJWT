@@ -1,7 +1,10 @@
 package database
 
 import (
+	"fmt"
 	"jwtreact/models"
+	"log"
+	"os"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -10,21 +13,24 @@ import (
 var DB *gorm.DB
 
 func Connect() {
-
-	dsn := "host=localhost dbname=rda-be port=5432 sslmode=disable TimeZone=Asia/Jakarta"
+	dsn := fmt.Sprintf("host=%s dbname=%s port=%s sslmode=%s timezone=%s", os.Getenv("DB_HOST"), os.Getenv("DB_DATABASE"), os.Getenv("DB_PORT"), os.Getenv("DB_SSLMODE"), os.Getenv("DB_TIMEZONE"))
 	connection, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-
-	// connection, err := gorm.Open(mysql.Open("root:@/go_jwt_react"), &gorm.Config{})
-
 	if err != nil {
-		panic("Could Not connect to database")
+		log.Fatalf("Could not connect to database: %v", err)
 	}
-
 	DB = connection
+}
 
-	connection.AutoMigrate(&models.User{})
-	connection.AutoMigrate(&models.Role{})
+func Migrate() {
+
+	if !DB.Migrator().HasTable(&models.User{}) {
+		DB.AutoMigrate(&models.User{})
+	}
+	if !DB.Migrator().HasTable(&models.Role{}) {
+		DB.AutoMigrate(&models.Role{})
+	}
 	// connection.AutoMigrate(&models.Service{})
-	connection.AutoMigrate(&models.UserHasRoles{})
-
+	if !DB.Migrator().HasTable(&models.UserHasRoles{}) {
+		DB.AutoMigrate(&models.UserHasRoles{})
+	}
 }
